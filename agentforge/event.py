@@ -15,6 +15,9 @@ EVENT_TYPES = Literal[
     'tool:assembly:finish',
     'tool:call:start',
     'tool:call:finish',
+    'run:start',
+    'run:next',
+    'run:finish'
 ]
 
 
@@ -25,11 +28,13 @@ class BaseEvent:
         agent_code: str,
         turn_id: str,
         event_type: EVENT_TYPES,
+        turn: int = 1,
         payload: dict = None,
     ):
         self.agent_name = agent_name
         self.agent_code = agent_code
         self.turn_id = turn_id
+        self.turn = turn
         self.event_type = event_type
         self.payload = payload or {}
 
@@ -43,17 +48,19 @@ class AgentEvent(BaseEvent):
         event_type: EVENT_TYPES,
         content: str = '',
         payload: dict = None,
+        turn: int = 1
     ):
-        super().__init__(agent_name, agent_code, turn_id, event_type, payload=payload)
+        super().__init__(agent_name, agent_code, turn_id, turn=turn, event_type=event_type, payload=payload)
         self.content = content
     
     @staticmethod
-    def build_from_resp(response: Response, agent_name: str, agent_code: str, turn_id: str) -> 'AgentEvent':
+    def build_from_resp(response: Response, agent_name: str, agent_code: str, turn_id: str, turn: int = 1) -> 'AgentEvent':
         if response.is_final:
             return AgentEvent(
                 agent_name=agent_name,
                 agent_code=agent_code,
                 turn_id=turn_id,
+                turn=turn,
                 event_type='agent:finish',
                 content=response.final_status.content,
                 payload={
@@ -104,15 +111,16 @@ class ToolEvent(BaseEvent):
         tool_id: str = '',
         tool_name: str = '',
         chunk_arg: str = '',
+        turn: int = 1
     ):
-        super().__init__(agent_name, agent_code, turn_id, event_type, payload=payload)
+        super().__init__(agent_name, agent_code, turn_id, turn=turn, event_type=event_type, payload=payload)
         self.tool_id = tool_id
         self.tool_name = tool_name
         self.chunk_arg = chunk_arg
         self.args: Optional[dict] = None
     
     @staticmethod
-    def build_from_resp(response: Response, agent_name: str, agent_code: str, turn_id: str) -> list['ToolEvent']:
+    def build_from_resp(response: Response, agent_name: str, agent_code: str, turn_id: str, turn: int = 1) -> list['ToolEvent']:
         if response.is_final: 
             return []
         if not response.current_chunk or not response.current_chunk.is_assembly_tool: 
@@ -135,6 +143,7 @@ class ToolEvent(BaseEvent):
                         agent_name=agent_name,
                         agent_code=agent_code,
                         turn_id=turn_id,
+                        turn=turn,
                         event_type='tool:assembly:start',
                         tool_id=tool_call.get('id', ''),
                         tool_name=tool_name
@@ -191,11 +200,13 @@ class ToolEvent(BaseEvent):
         tool_id: str,
         tool_name: str,
         args: Optional[dict] = None,
+        turn: int = 1
     ) -> 'ToolEvent':
         event = ToolEvent(
             agent_name=agent_name,
             agent_code=agent_code,
             turn_id=turn_id,
+            turn=turn,
             event_type='tool:call:start',
             tool_id=tool_id,
             tool_name=tool_name,
@@ -212,6 +223,7 @@ class ToolEvent(BaseEvent):
         tool_name: str,
         result: str = '',
         payload: dict = None,
+        turn: int = 1
     ) -> 'ToolEvent':
         event_payload = payload or {}
         if 'result' not in event_payload:
@@ -220,8 +232,22 @@ class ToolEvent(BaseEvent):
             agent_name=agent_name,
             agent_code=agent_code,
             turn_id=turn_id,
+            turn=turn,
             event_type='tool:call:finish',
             tool_id=tool_id,
             tool_name=tool_name,
             payload=event_payload,
         )
+
+
+class RuntimeEvent(BaseEvent):
+    def __init__(
+        self,
+        agent_name: str,
+        agent_code: str,
+        turn_id: str,
+        event_type: EVENT_TYPES,
+        payload: dict = None,
+        turn: int = 1
+    ):
+        super().__init__(agent_name, agent_code, turn_id, turn=turn, event_type=event_type, payload=payload)
