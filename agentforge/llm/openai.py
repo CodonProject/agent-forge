@@ -4,10 +4,11 @@ import requests
 from typing import Generator, Optional, Literal
 
 from agentforge.llm.base import Chunk, FinalStatus, Response, LLMInterface
+from agentforge.env import req_key, req_url, req_model
 
 
 class OpenAICompat(LLMInterface):
-    def __init__(self, api_key: str, base_url: str = 'https://api.openai.com/v1'):
+    def __init__(self, api_key: str = req_key(), base_url: str = req_url('https://api.openai.com/v1')):
         self.api_key  = api_key
         self.base_url = base_url
         self.url = '/chat/completions'
@@ -19,7 +20,7 @@ class OpenAICompat(LLMInterface):
     def _request(
         self,
         messages: list[dict],
-        model: str = 'gpt-4o',
+        model: str = req_model('gpt-4o'),
         tools: Optional[list[dict]] = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
@@ -89,17 +90,17 @@ class OpenAICompat(LLMInterface):
                 except Exception:
                     error_detail = ""
             
-            error_msg = f"HTTP Error {response.status_code}: {e}"
+            error_msg = f"HTTP Error '{response.status_code}': {e}"
             if error_detail:
-                error_msg += f"Response detail: {error_detail}"
+                error_msg += f'Response detail: {error_detail}'
             try:
                 response.close()
             except Exception:
                 pass
             raise requests.exceptions.HTTPError(error_msg, response=response) from e
 
-        total_content = ""
-        total_cot_content = ""
+        total_content = ''
+        total_cot_content = ''
         tool_calls_map = {}
 
         completion_tokens = 0
@@ -269,7 +270,7 @@ class OpenAICompat(LLMInterface):
     def request(
         self,
         messages: list[dict],
-        model: str = 'gpt-4o',
+        model: str = req_model('gpt-4o'),
         tools: Optional[list[dict]] = None,
         temperature: float = 0.7,
         top_p: float = 1.0,

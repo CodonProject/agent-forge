@@ -1,9 +1,10 @@
 from typing import List, Dict, Any, Optional, Union, Generator
 
-from agentforge.llm.base import LLMInterface
+from agentforge.llm   import LLMInterface
 from agentforge.tool  import Tool
 from agentforge.event import AgentEvent, ToolEvent, RuntimeEvent, EVENT_TYPES
 from agentforge.utils import safecode
+from agentforge.env   import req_model
 
 import json
 
@@ -15,7 +16,7 @@ class Agent:
         llm: LLMInterface,
         system_prompt: str = 'You are a helpful assistant.',
         tools: Optional[List[Tool]] = None,
-        model: str = 'gpt-4o',
+        model: str = req_model('gpt-4o'),
     ):
         self.name = name
         self.code = safecode(length=4)
@@ -29,7 +30,11 @@ class Agent:
             {'role': 'system', 'content': system_prompt}
         ]
 
-    def run(self, user_input: str, max_steps: int = 5) -> Generator[Union[AgentEvent, ToolEvent], None, None]:
+    def run(
+        self,
+        user_input: str,
+        max_steps: int = 5
+    ) -> Generator[Union[AgentEvent, ToolEvent, RuntimeEvent], None, None]:
         turn_id = safecode(length=4)
 
         accumulated_usage = {

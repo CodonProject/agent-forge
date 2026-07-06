@@ -1,4 +1,4 @@
-from agentforge.llm.base import Response
+from agentforge.llm import Response
 from typing import Literal, Optional
 
 import json
@@ -163,6 +163,20 @@ class ToolEvent(BaseEvent):
                     parsed_args = json.loads(arguments)
                     is_json_valid = True
                 except json.JSONDecodeError: pass
+
+            if chunk_arg:
+                results.append(
+                    ToolEvent(
+                        agent_name=agent_name,
+                        agent_code=agent_code,
+                        turn_id=turn_id,
+                        event_type='tool:assembly:step',
+                        tool_id=tool_call.get('id', ''),
+                        tool_name=tool_name,
+                        chunk_arg=chunk_arg
+                    )
+                )
+
             if is_json_valid:
                 ToolEvent._finished_tools.add(state_key)
                 event = ToolEvent(
@@ -171,24 +185,11 @@ class ToolEvent(BaseEvent):
                     turn_id=turn_id,
                     event_type='tool:assembly:finish',
                     tool_id=tool_call.get('id', ''),
-                    tool_name=tool_name,
-                    chunk_arg=chunk_arg
+                    tool_name=tool_name
                 )
                 event.args = parsed_args
                 results.append(event)
-            else:
-                if chunk_arg:
-                    results.append(
-                        ToolEvent(
-                            agent_name=agent_name,
-                            agent_code=agent_code,
-                            turn_id=turn_id,
-                            event_type='tool:assembly:step',
-                            tool_id=tool_call.get('id', ''),
-                            tool_name=tool_name,
-                            chunk_arg=chunk_arg
-                        )
-                    )
+
         
         return results
     

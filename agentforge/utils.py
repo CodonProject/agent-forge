@@ -8,45 +8,34 @@ import base64
 import random
 import string
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-api_key = os.getenv('API_KEY') or os.getenv('OPENAI_API_KEY') or ''
-base_url  = os.getenv("BASE_URL") or ''
-model_id = os.getenv("MODEL_ID") or ''
-platform = os.getenv("PLATFORM") or 'openai_compat'
-
 
 def get_function_details(func: Callable) -> Dict[str, Any]:
-    """
-    检查一个函数，并以结构化的形式返回其参数和文档字符串。
+    '''Inspects a function and returns its parameters and docstring in a structured format.
 
     Args:
-        func (Callable): 需要被检查的目标函数。
+        func (Callable): The target function to be inspected.
 
     Returns:
-        Dict[str, Any]: 一个包含 'parameters' 和 'docstring' 键的字典。
-                        'parameters' 是一个列表，每个元素都是描述一个参数的字典。
-                        'docstring' 是函数的文档字符串。
-    """
-    if not callable(func):
-        raise TypeError("提供的对象不是一个可调用函数。")
+        Dict[str, Any]: A dictionary containing 'parameters' and 'docstring' keys.
+            'parameters' is a list of dictionaries, each describing a parameter.
+            'docstring' is the docstring of the function.
 
-    # 1. 获取文档字符串 (使用 inspect.getdoc 可以很好地处理缩进)
-    docstring = inspect.getdoc(func) or "No docstring provided."
+    Raises:
+        TypeError: If the provided object is not callable.
+    '''
+    if not callable(func):
+        raise TypeError('The provided object is not callable. Please provide a valid function or callable object.')
+
+    docstring = inspect.getdoc(func) or 'No docstring provided.'
     
-    # 2. 获取函数签名 (Signature)
     try:
         signature = inspect.signature(func)
     except (ValueError, TypeError):
-        # 对于某些内置函数或C语言实现的函数，可能无法获取签名
         return {
-            'parameters': "Could not retrieve parameters for this function.",
+            'parameters': 'Could not retrieve parameters for this function.',
             'docstring': docstring
         }
 
-    # 3. 遍历签名中的所有参数并提取信息
     parameters_details: List[Dict[str, Any]] = []
     for name, param in signature.parameters.items():
         param_info = {
@@ -65,30 +54,36 @@ def get_function_details(func: Callable) -> Dict[str, Any]:
 
 
 def analyze_tool_function(func: Callable) -> Dict[str, Any]:
-    """
-    深度分析一个函数，结合其签名和 docstring-parser 的解析结果，
-    返回每个参数的详细信息。能够自动识别 Google, reST, NumPy 等多种风格。
-    """
-    # 1. 使用 inspect 获取最可靠的签名信息和原始 docstring
+    '''Analyzes a function in detail, combining its signature and docstring parser results.
+
+    Retrieves detailed information for each parameter. Can automatically identify
+    multiple docstring styles such as Google, reST, NumPy, etc.
+
+    Args:
+        func (Callable): The target function to analyze.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing:
+            - 'docstring': The combined summary description of the function.
+            - 'parameters': A list of enhanced parameter dictionaries containing names,
+              kinds, defaults, annotations, descriptions, and requirement status.
+    '''
     basic_details = get_function_details(func)
     original_docstring = basic_details.get('docstring', '')
-    # 2. 使用 docstring-parser 解析文档字符串
+    
     parsed_docstring = parse(original_docstring)
     
-    
-    # 3. 为快速查找，将解析出的参数描述转为字典
     param_descriptions = {
         param.arg_name: param.description for param in parsed_docstring.params
     }
     
-    # 4. 组合函数的摘要描述
     summary_parts = []
     if parsed_docstring.short_description:
         summary_parts.append(parsed_docstring.short_description)
     if parsed_docstring.long_description:
         summary_parts.append(parsed_docstring.long_description)
-    summary = "\n\n".join(summary_parts) if summary_parts else ""
-    # 5. 合并来自签名和 docstring 的信息
+    summary = '\n\n'.join(summary_parts) if summary_parts else ''
+    
     enhanced_parameters = []
     if isinstance(basic_details['parameters'], list):
         for param in basic_details['parameters']:
@@ -96,12 +91,10 @@ def analyze_tool_function(func: Callable) -> Dict[str, Any]:
             
             enhanced_param = param.copy()
             
-            # 从解析结果中获取描述
             enhanced_param['description'] = param_descriptions.get(
-                param_name, "No description found in docstring."
-            ).replace('\n', ' ')
+                param_name, 'No description found in docstring.'
+                ).replace('\n', ' ')
             
-            # “是否必需”的信息来源于签名的默认值，这是最可靠的
             enhanced_param['required'] = (param['default'] == 'N/A')
             
             enhanced_parameters.append(enhanced_param)
@@ -113,8 +106,7 @@ def analyze_tool_function(func: Callable) -> Dict[str, Any]:
 
 
 def safecode(length: int = 4, exclude_confusing: bool = False) -> str:
-    '''
-    Generates a random safe code consisting of letters and digits.
+    '''Generates a random safe code consisting of letters and digits.
 
     Args:
         length (int): The length of the code to generate. Defaults to 4.
@@ -134,14 +126,28 @@ def safecode(length: int = 4, exclude_confusing: bool = False) -> str:
     return code
 
 
+def req_base64_file(path: str) -> str:
+    '''Reads a file and returns its content encoded as a Base64 string.
 
-def req_base64_file(path:str) -> str:
+    Args:
+        path (str): The path to the file.
+
+    Returns:
+        str: The Base64 encoded string of the file content.
+    '''
     return base64.b64encode(req_file(path, mode='rb')).decode('utf-8')
 
 
-def req_file(path:str, mode:str='r', encoding:str='utf-8') -> Union[str, bytes]:
-    '''
-    从文件中读取内容
+def req_file(path: str, mode: str = 'r', encoding: str = 'utf-8') -> Union[str, bytes]:
+    '''Reads and returns the content of a file.
+
+    Args:
+        path (str): The path to the file.
+        mode (str): The mode in which the file is opened (e.g., 'r', 'rb'). Defaults to 'r'.
+        encoding (str): The encoding used to decode the file when reading in text mode. Defaults to 'utf-8'.
+
+    Returns:
+        Union[str, bytes]: The content of the file. Returns an empty string or empty bytes if the file does not exist.
     '''
     if not os.path.isfile(path): return b'' if 'b' in mode else ''
     if 'b' in mode:

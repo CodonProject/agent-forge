@@ -59,8 +59,10 @@ class Tool:
             if param.get('required', False):
                 required_params.append(param_name)
         
-        if not self.description.startswith('A tool: ') and not self.description.startswith('An Agent: '):
-            self.description = f'A tool: {self.description}'
+        if not self.description.startswith('A tool:') and \
+           not self.description.startswith('An Agent:') and \
+           not self.description.startswith('A Group:'):
+            self.description = f'A tool:\n{self.description}'
                 
         tool_info = {
             'type': 'function',
