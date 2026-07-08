@@ -3,8 +3,8 @@ import requests
 
 from typing import Generator, Optional, Literal
 
-from agentforge.llm.base import Chunk, FinalStatus, Response, LLMInterface
-from agentforge.env import req_key, req_url, req_model
+from orchify.llm.base import Chunk, FinalStatus, Response, LLMInterface
+from orchify.env import req_key, req_url, req_model
 
 
 class OpenAICompat(LLMInterface):

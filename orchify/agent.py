@@ -1,10 +1,10 @@
 from typing import List, Dict, Any, Optional, Union, Generator
 
-from agentforge.llm   import LLMInterface
-from agentforge.tool  import Tool
-from agentforge.event import AgentEvent, ToolEvent, RuntimeEvent, EVENT_TYPES
-from agentforge.utils import safecode
-from agentforge.env   import req_model
+from orchify.llm   import LLMInterface
+from orchify.tool  import Tool
+from orchify.event import AgentEvent, ToolEvent, RuntimeEvent, EVENT_TYPES
+from orchify.utils import safecode
+from orchify.env   import req_model
 
 import json
 
