@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Generator, Literal
+from typing import Optional, Generator, AsyncGenerator, Literal
 
 
 @dataclass
@@ -53,7 +53,7 @@ class Response:
 
 
 class LLMInterface:
-    def request(
+    async def request(
         self,
         messages: list[dict],
         model: str = 'gpt-4o',
@@ -64,5 +64,5 @@ class LLMInterface:
         max_tokens: Optional[int] = None,
         thinking: Literal['disabled', 'enabled', 'auto'] = 'auto',
         effort: Literal['minimal', 'low', 'medium', 'high', 'xhigh'] = 'medium',
-    ) -> Generator[Response, None, None]:
+    ) -> AsyncGenerator[Response, None]:
         raise NotImplementedError('Subclasses must implement this method.')

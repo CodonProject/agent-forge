@@ -1,6 +1,8 @@
 from orchify.event import BaseEvent, AgentEvent, RuntimeEvent, EVENT_TYPES
 import inspect
 import threading as td
+import asyncio
+from typing import Any
 
 
 class Broker:
@@ -9,7 +11,7 @@ class Broker:
         self.hooks['*'] = []
 
         self.requests: dict[str, td.Event] = {}
-        self.runs: dict[str, td.Thread] = {}
+        self.runs: dict[str, Any] = {}
 
         self._emit_lock = td.Lock()
     
@@ -66,6 +68,13 @@ class Broker:
     def finish_td(self, t: td.Thread):
         if not t.name in self.runs.keys(): return
         del self.runs[t.name]
+
+    def start_task(self, name: str, task: asyncio.Task):
+        self.runs[name] = task
+
+    def finish_task(self, name: str):
+        if name in self.runs:
+            del self.runs[name]
 
 
 orchify_broker = Broker()

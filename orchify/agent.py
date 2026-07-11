@@ -1,14 +1,20 @@
-from typing import List, Dict, Any, Optional, Union, Generator
+from typing import List, Dict, Any, Optional, Union, AsyncGenerator
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from orchify.llm    import LLMInterface
 from orchify.tool   import Tool
-from orchify.event  import AgentEvent, ToolEvent, RuntimeEvent, EVENT_TYPES
+from orchify.event  import AgentEvent, ToolEvent, RuntimeEvent
 from orchify.utils  import safecode
 from orchify.env    import req_model
 from orchify.broker import orchify_broker
+from orchify.backend import orchify_web_backend
 
 import json
-import threading as td
+
+
+# Global thread pool for parallel execution of blocking synchronous tools.
+tool_executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix='OrchifyToolExecutor')
 
 
 class Agent:
@@ -38,37 +44,45 @@ class Agent:
         user_input: str,
         max_steps: int = 5
     ) -> None:
-        t = td.Thread(
-            target=self._thread_process,
-            name=f'{self.name}#{self.code}_{safecode()}',
-            kwargs={
-                'user_input': user_input,
-                'max_steps': max_steps
-            }
+        '''
+        Synchronously schedules the agent's task to be executed on the WebBackend asyncio loop.
+        This provides a non-blocking synchronous entry point, avoiding OS thread creation per run.
+        '''
+        task_name = f'{self.name}#{self.code}_{safecode()}'
+        # Register the task name synchronously before scheduling to avoid race condition where
+        # the main thread immediately checks orchify_broker.runs and sees it empty.
+        orchify_broker.start_task(task_name, None)
+        # Schedule the coroutine execution inside our dedicated background thread's loop.
+        asyncio.run_coroutine_threadsafe(
+            self._async_thread_process(user_input, max_steps, task_name),
+            orchify_web_backend._loop
         )
-        orchify_broker.start_td(t)
     
-    def _thread_process(
+    async def _async_thread_process(
         self,
         user_input: str,
-        max_steps: int = 5
-    ):
-        current_thread = td.current_thread()
+        max_steps: int,
+        task_name: str
+    ) -> None:
+        # Register the running task with the broker using the current task object
+        current_task = asyncio.current_task()
+        orchify_broker.start_task(task_name, current_task)
+        
         generator = self._run(
             user_input=user_input,
             max_steps=max_steps
         )
         try:
-            for e in generator: 
+            async for e in generator: 
                 orchify_broker.emit(e)
         finally:
-            orchify_broker.finish_td(current_thread)
+            orchify_broker.finish_task(task_name)
 
-    def _run(
+    async def _run(
         self,
         user_input: str,
         max_steps: int = 5
-    ) -> Generator[Union[AgentEvent, ToolEvent, RuntimeEvent], None, None]:
+    ) -> AsyncGenerator[Union[AgentEvent, ToolEvent, RuntimeEvent], None]:
         turn_id = safecode(length=4)
 
         accumulated_usage = {
@@ -124,7 +138,7 @@ class Agent:
             )
             
             final_status = None
-            for response in response_gen:
+            async for response in response_gen:
                 if response.is_final:
                     final_status = response.final_status
                     yield AgentEvent.build_from_resp(
@@ -178,7 +192,11 @@ class Agent:
             })
             
             if not final_status.tool_calls: break
-                
+
+            # Prepare and start all tool executions concurrently
+            loop = asyncio.get_running_loop()
+            tasks = []
+
             for tool_call in final_status.tool_calls:
                 tool_id = tool_call.get('id') or ''
                 tool_name = tool_call.get('function', {}).get('name') or ''
@@ -198,31 +216,51 @@ class Agent:
                     args=args,
                     turn=step
                 )
-                
+
                 tool = self.tools.get(tool_name)
-                if tool:
-                    try:
-                        if isinstance(args, dict):
-                            result = tool.execute(**args)
-                        else:
-                            result = tool.execute()
-                        
-                        if not isinstance(result, str):
-                            result = json.dumps(result, ensure_ascii=False)
-                    except Exception as e:
-                        result = f"Error executing tool '{tool_name}': {str(e)}"
-                else:
-                    result = f"Tool '{tool_name}' not found."
+                
+                def run_single_tool(t_tool=tool, t_name=tool_name, t_args=args, t_id=tool_id):
+                    if t_tool:
+                        try:
+                            if isinstance(t_args, dict):
+                                res = t_tool.execute(**t_args)
+                            else:
+                                res = t_tool.execute()
+                            
+                            if not isinstance(res, str):
+                                res = json.dumps(res, ensure_ascii=False)
+                        except Exception as e:
+                            res = f"Error executing tool '{t_name}': {str(e)}"
+                    else:
+                        res = f"Tool '{t_name}' not found."
+                    return t_id, t_name, res
+
+                # Submit synchronous blocking tool functions to the thread pool executor via asyncio
+                future = loop.run_in_executor(tool_executor, run_single_tool)
+                tasks.append(future)
+
+            # Retrieve results as they complete and yield finish events.
+            # Using asyncio.as_completed allows us to emit ToolEvents as soon as they finish execution.
+            completed_results = {}
+            for future in asyncio.as_completed(tasks):
+                t_id, t_name, result = await future
+                completed_results[t_id] = (t_name, result)
                 
                 yield ToolEvent.build_call_finish(
                     agent_name=self.name,
                     agent_code=self.code,
                     turn_id=turn_id,
-                    tool_id=tool_id,
-                    tool_name=tool_name,
+                    tool_id=t_id,
+                    tool_name=t_name,
                     result=result,
                     turn=step
                 )
+
+            # Re-append to messages in original order to maintain message conversation integrity
+            for tool_call in final_status.tool_calls:
+                tool_id = tool_call.get('id') or ''
+                tool_name = tool_call.get('function', {}).get('name') or ''
+                t_name, result = completed_results.get(tool_id, (tool_name, f"Tool '{tool_name}' execution failed."))
                 
                 self.messages.append({
                     'role': 'tool',
