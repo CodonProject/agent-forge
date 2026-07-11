@@ -1,12 +1,14 @@
 from typing import List, Dict, Any, Optional, Union, Generator
 
-from orchify.llm   import LLMInterface
-from orchify.tool  import Tool
-from orchify.event import AgentEvent, ToolEvent, RuntimeEvent, EVENT_TYPES
-from orchify.utils import safecode
-from orchify.env   import req_model
+from orchify.llm    import LLMInterface
+from orchify.tool   import Tool
+from orchify.event  import AgentEvent, ToolEvent, RuntimeEvent, EVENT_TYPES
+from orchify.utils  import safecode
+from orchify.env    import req_model
+from orchify.broker import orchify_broker
 
 import json
+import threading as td
 
 
 class Agent:
@@ -14,7 +16,7 @@ class Agent:
         self,
         name: str,
         llm: LLMInterface,
-        system_prompt: str = 'You are a helpful assistant.',
+        system_prompt: str = '',
         tools: Optional[List[Tool]] = None,
         model: str = req_model('gpt-4o'),
     ):
@@ -27,10 +29,42 @@ class Agent:
         self.tools: Dict[str, Tool] = {t.name: t for t in (tools or [])}
         
         self.messages: List[Dict[str, Any]] = [
-            {'role': 'system', 'content': system_prompt}
+            {'role': 'system', 'content': system_prompt} if system_prompt else {}
         ]
-
+        self.messages = [msg for msg in self.messages if msg]
+    
     def run(
+        self,
+        user_input: str,
+        max_steps: int = 5
+    ) -> None:
+        t = td.Thread(
+            target=self._thread_process,
+            name=f'{self.name}#{self.code}_{safecode()}',
+            kwargs={
+                'user_input': user_input,
+                'max_steps': max_steps
+            }
+        )
+        orchify_broker.start_td(t)
+    
+    def _thread_process(
+        self,
+        user_input: str,
+        max_steps: int = 5
+    ):
+        current_thread = td.current_thread()
+        generator = self._run(
+            user_input=user_input,
+            max_steps=max_steps
+        )
+        try:
+            for e in generator: 
+                orchify_broker.emit(e)
+        finally:
+            orchify_broker.finish_td(current_thread)
+
+    def _run(
         self,
         user_input: str,
         max_steps: int = 5
@@ -65,10 +99,11 @@ class Agent:
             turn=1
         )
 
-        last_executed_step = 1
+        runs = []
+        executed_step = 1
         
         for step in range(1, max_steps + 1):
-            last_executed_step = step
+            executed_step = step
 
             if step > 1:
                 yield RuntimeEvent(
@@ -136,6 +171,11 @@ class Agent:
             if final_status.tool_calls:
                 assistant_msg['tool_calls'] = final_status.tool_calls
             self.messages.append(assistant_msg)
+
+            runs.append({
+                'step': step,
+                'status': final_status
+            })
             
             if not final_status.tool_calls: break
                 
@@ -190,6 +230,12 @@ class Agent:
                     'name': tool_name,
                     'content': result
                 })
+            
+            runs.append({
+                'step': step,
+                'content': assistant_msg,
+                'tool_calls': final_status.tool_calls
+            })
         
         yield RuntimeEvent(
             agent_name=self.name,
@@ -197,8 +243,9 @@ class Agent:
             turn_id=turn_id,
             event_type='run:finish',
             payload={
-                'total_steps': last_executed_step,
-                'usage': accumulated_usage
+                'total_steps': executed_step,
+                'usage': accumulated_usage,
+                'runs': runs
             },
-            turn=last_executed_step
+            turn=executed_step
         )

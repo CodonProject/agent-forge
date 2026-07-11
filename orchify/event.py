@@ -1,5 +1,6 @@
 from orchify.llm import Response
 from typing import Literal, Optional
+from dataclasses import dataclass
 
 import json
 
@@ -10,6 +11,7 @@ EVENT_TYPES = Literal[
     'agent:reason:finish',
     'agent:answer',
     'agent:finish',
+    'agent:abort',
     'tool:assembly:start',
     'tool:assembly:step',
     'tool:assembly:finish',
@@ -19,6 +21,17 @@ EVENT_TYPES = Literal[
     'run:next',
     'run:finish'
 ]
+
+FEEDBACK_TYPES = Literal[
+    'control:stop',
+    'control:continue'
+]
+
+
+@dataclass
+class EventFeedback:
+    ftype: FEEDBACK_TYPES
+    comment: Optional[str] = None
 
 
 class BaseEvent:
@@ -252,3 +265,4 @@ class RuntimeEvent(BaseEvent):
         turn: int = 1
     ):
         super().__init__(agent_name, agent_code, turn_id, turn=turn, event_type=event_type, payload=payload)
+    

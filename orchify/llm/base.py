@@ -29,6 +29,8 @@ class FinalStatus:
     prompt_cache_miss_tokens: int = field(default=0)
     total_tokens: int = field(default=0)
 
+    is_abort: bool = field(default=False)
+
     @property
     def completion_token(self) -> int:
         return self.completion_tokens
